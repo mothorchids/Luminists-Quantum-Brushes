@@ -1,0 +1,18 @@
+{
+  "stroke_input": {
+    "image_s_rgba": null,
+    "image_t_rgba": null,
+    "clicks": [],
+    "path": []
+  },
+  "user_input": {
+    "Controls": 2,
+    "t_start": 0.0,
+    "t_end": 1.0,
+    "t_number-of-images": 8,
+    "timesteps": 80,
+    "Souce=Paste": true,
+    "show source & target": false,
+    "show color": [255, 0, 0]
+  }
+}
