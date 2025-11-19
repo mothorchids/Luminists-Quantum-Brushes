@@ -4,6 +4,7 @@ import argparse
 import json
 
 import numpy as np
+import jax.numpy as jnp
 import pennylane as qml
 
 import helper as steer
@@ -41,8 +42,8 @@ def define_region(img, coord1=None, coord2=None):
     c_start, c_end = min(c1, c2), max(c1, c2)
     
     # Create coordinates
-    rows, cols = np.meshgrid(np.arange(r_start, r_end+1), np.arange(c_start, c_end+1), indexing='ij')
-    coords = np.stack([rows.ravel(), cols.ravel()], axis=-1)
+    rows, cols = jnp.meshgrid(jnp.arange(r_start, r_end+1), jnp.arange(c_start, c_end+1), indexing='ij')
+    coords = jnp.stack([rows.ravel(), cols.ravel()], axis=-1)
     
     return coords
 
@@ -51,27 +52,27 @@ Utility functions for colors
 """
 def selection_to_state(image, region, nb_controls):
     pixels = image[region[:, 0], region[:, 1]] # RGBA 
-    print(f"initial pixels {pixels}")
-    pixels = pixels.astype(np.float32) / 255.0
+    # print(f"initial pixels {pixels}")
+    pixels = pixels.astype(jnp.float32) / 255.0
 
-    U, S, Vt = np.linalg.svd(pixels, full_matrices=False)
-    S_safe = np.clip(S, 1e-30, None)  # Avoid log(0) or negative
-    log_s = np.log(S_safe)
+    U, S, Vt = jnp.linalg.svd(pixels, full_matrices=False)
+    S_safe = jnp.clip(S, 1e-30, None)  # Avoid log(0) or negative
+    log_s = jnp.log(S_safe)
     if nb_controls == 2:
-        return U, S, Vt, log_s / np.linalg.norm(log_s)
+        return U, S, Vt, log_s / jnp.linalg.norm(log_s)
 
     # state = Vt.flatten() # 16 entries
     if nb_controls == 3:
-        log_s2 =np.concatenate([log_s, Vt @ log_s])
+        log_s2 =jnp.concatenate([log_s, Vt @ log_s])
         
-        return U, S, Vt, log_s2/np.linalg.norm(log_s2)
+        return U, S, Vt, log_s2/jnp.linalg.norm(log_s2)
     elif nb_controls == 4:
         # return U, S, Vt, state / np.linalg.norm(state)
         ### First method
-        # log_s4 = (np.kron(log_s.reshape(-1, 1), log_s.reshape(-1,1).T)).flatten()
+        log_s4 = jnp.concatenate([log_s, Vt @ log_s, Vt @ Vt @ log_s, Vt @ Vt @ Vt @ log_s])
         ### Second method
-        log_s4 = np.concatenate([log_s, Vt @ log_s, Vt @ Vt @ log_s, Vt @ Vt @ Vt @ log_s])
-        return U, S, Vt, log_s4/np.linalg.norm(log_s4)
+        # log_s4 = (np.kron(log_s.reshape(-1, 1), log_s.reshape(-1,1).T)).flatten()
+        return U, S, Vt, log_s4/jnp.linalg.norm(log_s4)
 
     else :
         raise ValueError(f"Unsupported number of controls: {nb_controls}")
@@ -81,24 +82,43 @@ def state_to_pixels(U, S, Vt, state):
     template : selection of pixels from an image
     state : output state from circuit
     """
-    state = np.array(state)
+    state = jnp.array(state)
     nb = len(state)
-    S_new = np.copy(np.diag(S))
-    Vt_new = np.copy(Vt)
-    S_safe = np.clip(S, 1e-30, None)  # Avoid log(0) or negative
-    log_s = np.log(S_safe)
-    norm_log_s = np.linalg.norm(log_s)
+    S_new = jnp.copy(jnp.diag(S))
+    Vt_new = jnp.copy(Vt)
+    S_safe = jnp.clip(S, 1e-30, None)  # Avoid log(0) or negative
+    log_s = jnp.log(S_safe)
+    norm_log_s = jnp.linalg.norm(log_s)
+    # helper function to construct block diagonaled matrices
+    def block_diag_np(*mats):
+        # Determine total size
+        sizes = [m.shape[0] for m in mats]
+        total = sum(sizes)
+
+        # Allocate zero matrix
+        out = jnp.zeros((total, total), dtype=mats[0].dtype)
+
+        # Fill blocks
+        offset = 0
+        for m in mats:
+            n = m.shape[0]
+            out[offset:offset+n, offset:offset+n] = m
+            offset += n
+
+        return out
     if nb==4:
-        exponent = np.clip(norm_log_s * state, -700, 700) # to avoid overflow
-        S_new = np.diag(np.exp(exponent))
+        exponent = jnp.clip(norm_log_s * state, -700, 700) # to avoid overflow
+        S_new = jnp.diag(jnp.exp(exponent))
     elif nb==8 :
-        op = np.eye(8)
-        op[4:, 4:] = Vt_new
-        state_new = (np.linalg.inv(op) @ state)[:4]
-        exponent = np.clip(norm_log_s * state_new/np.linalg.norm(state_new), -700, 700) # to avoid overflow
-        S_new = np.diag(np.exp(exponent))
+        op = block_diag_np(jnp.eye(4), Vt_new)
+        state_new = (jnp.linalg.inv(op) @ state)[:4]
+        exponent = jnp.clip(norm_log_s * state_new/np.linalg.norm(state_new), -700, 700) # to avoid overflow
+        S_new = jnp.diag(jnp.exp(exponent))
     elif nb==16:
         ### First method
+        op = block_diag_np(jnp.eye(4), Vt_new, Vt_new @ Vt_new, Vt_new @ Vt_new @ Vt_new)
+        state_new = (jnp.linalg.inv(op) @ state)[:4]
+        ### Second method
         # def best_self_outer_complex(M):
         #     H = 0.5 * (M + M.conj().T)   # Hermitian part
         #     lam, U = np.linalg.eigh(H)   # real eigenvalues
@@ -110,31 +130,12 @@ def state_to_pixels(U, S, Vt, state):
         #     res_norm = np.linalg.norm(M - A, ord='fro')
         #     return a, A, res_norm 
         # state_new, _, _ = best_self_outer_complex(state.reshape(4, 4))
-        ### Second method
-        def block_diag_np(*mats):
-            # Determine total size
-            sizes = [m.shape[0] for m in mats]
-            total = sum(sizes)
 
-            # Allocate zero matrix
-            out = np.zeros((total, total), dtype=mats[0].dtype)
-
-            # Fill blocks
-            offset = 0
-            for m in mats:
-                n = m.shape[0]
-                out[offset:offset+n, offset:offset+n] = m
-                offset += n
-
-            return out
-        op = block_diag_np(np.eye(4), Vt_new, Vt_new @ Vt_new, Vt_new @ Vt_new @ Vt_new)
-        state_new = (np.linalg.inv(op) @ state)[:4]
-
-        exponent = np.clip(norm_log_s * state_new/np.linalg.norm(state_new), -700, 700) # to avoid overflow
-        S_new = np.diag(np.exp(exponent))
+        exponent = jnp.clip(norm_log_s * state_new/np.linalg.norm(state_new), -700, 700) # to avoid overflow
+        S_new = jnp.diag(jnp.exp(exponent))
     else :
         raise ValueError(f"Unsupported number of param in state : {nb}")
-    print(f"========== Output ==============\n U=\n{U},\n S=\n{S_new},\n Vt=\n{Vt_new}")
+    # print(f"========== Output ==============\n U=\n{U},\n S=\n{S_new},\n Vt=\n{Vt_new}")
     return U @ S_new @ Vt_new
     
 """
@@ -168,25 +169,25 @@ def run(params,ts=None):
     region_t = define_region(image_t)
 
     # Encode colors to probability states
-    print("=== Computing angles from source ===")
+    # print("=== Computing angles from source ===")
     U_s, S_s, Vt_s, state_s = selection_to_state(image_s, region_s, nb_controls)
-    print(f"state_s={state_s}")
-    print("=== Computing angles from target ===")
+    # print(f"state_s={state_s}")
+    # print("=== Computing angles from target ===")
     _, _, _, state_t = selection_to_state(image_t, region_t, nb_controls)
-    print(f"state_t={state_t}")
+    # print(f"state_t={state_t}")
 
-    output_measures = create_circuit_and_measure_multiple(params, state_s, state_t, state_s, nb_controls,ts).real
+    output_measures = create_circuit_and_measure_multiple(params, state_s, state_t, state_s, nb_controls, ts).real
     
     region_output = region_s
 
     pixels = image_s[region_output[:, 0], region_output[:, 1], :]
-    pixels = pixels.astype(np.float32) / 255.0
+    pixels = pixels.astype(jnp.float32) / 255.0
 
     new_images = np.empty(16, dtype=object)
     for k in range(len(ts)):
-        print(f"output state: {output_measures[k].real}")
+        # print(f"output state: {output_measures[k].real}")
         new_pixels = state_to_pixels(U_s, S_s, Vt_s, output_measures[k].real)
-        new_images[k] = (new_pixels * 255).astype(np.uint8)
+        new_images[k] = (new_pixels * 255).astype(jnp.uint8)
 
     # return new_image
     return new_images
@@ -207,8 +208,8 @@ def main():
         params = json.load(f)
 
     # Load two input images
-    img1 = np.array(Image.open(args.image1).convert("RGBA"))
-    img2 = np.array(Image.open(args.image2).convert("RGBA"))
+    img1 = jnp.array(Image.open(args.image1).convert("RGBA"))
+    img2 = jnp.array(Image.open(args.image2).convert("RGBA"))
 
     # Change params if  precised by user
     params["stroke_input"]["image_s_rgba"] = img1
@@ -219,22 +220,22 @@ def main():
     t_start = params["user_input"].get("t_start", 0.0)
     t_end = params["user_input"].get("t_end", 1.0)
     t_number_of_images = params["user_input"].get("t_number-of-images", 8)
-    ts = list(np.linspace(t_start, t_end, t_number_of_images))
+    ts = list(jnp.linspace(t_start, t_end, t_number_of_images))
     outs = run(params,ts)
     for k in range(len(ts)):
         height, width = img1.shape[:2]
         img_array = outs[k].reshape((height, width, 4))
 
         img_array = np.nan_to_num(img_array)          # replace NaN/Inf with 0
-        img_array = np.clip(img_array, 0, 255)        # clamp values to [0, 255]
-        img_array = img_array.astype(np.uint8)        # convert to unsigned 8-bit integer
+        img_array = jnp.clip(img_array, 0, 255)        # clamp values to [0, 255]
+        img_array = img_array.astype(jnp.uint8)        # convert to unsigned 8-bit integer
 
         # Save output
         pretty_t = format(ts[k], ".2f").replace('.','p')
         output_filename = args.output+"_t"+pretty_t 
         output_filename = output_filename +".png"
-        Image.fromarray(img_array).save(output_filename)
-        print(f"Saved result to {output_filename}")
+        Image.fromarray(np.array(img_array)).save(output_filename)
+        # print(f"Saved result to {output_filename}")
 
 # --------------------------------------------------------------------
 

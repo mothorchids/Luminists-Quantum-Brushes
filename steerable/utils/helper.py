@@ -2,7 +2,7 @@
 Author: Chih-Kang Huang && chih-kang.huang@hotmail.com
 Date: 2025-11-13 08:14:18
 LastEditors: Chih-Kang Huang && chih-kang.huang@hotmail.com
-LastEditTime: 2025-11-16 11:35:21
+LastEditTime: 2025-11-16 18:25:07
 FilePath: /steerable/utils/helper.py
 Description: 
 
@@ -86,7 +86,7 @@ def partial_trace(psi, keep, n_qubits):
 
 # ---------- Main visualization ----------
 
-def visualize_bloch_trajectories(states, target_state, n_qubits):
+def visualize_bloch_trajectories(states, target_state, n_qubits, ent=False, savepath=None):
     """
     states: list/array of shape (T, 2**n)
     target_state: vector of shape (2**n,)
@@ -103,17 +103,13 @@ def visualize_bloch_trajectories(states, target_state, n_qubits):
         trajs.append(traj_q)
         targets.append(bloch_vector(partial_trace(target_state, [q], n_qubits)))
 
-    # Entanglement entropy between qubit 0 and the rest
-    ent_entropy = jnp.array([
-        von_neumann_entropy(partial_trace(psi, [0], n_qubits)) for psi in states
-    ])
 
     # ---------- Visualization ----------
     fig = plt.figure(figsize=(5 * n_qubits, 5))
-
+    n_fig = n_qubits +1 if ent else n_qubits
     # Each qubit's Bloch trajectory
     for q in range(n_qubits):
-        ax = fig.add_subplot(1, n_qubits + 1, q + 1, projection='3d')
+        ax = fig.add_subplot(1, n_fig, q + 1, projection='3d')
         traj = trajs[q]
         target = targets[q]
         ax.plot(traj[:,0], traj[:,1], traj[:,2], lw=2)
@@ -123,17 +119,24 @@ def visualize_bloch_trajectories(states, target_state, n_qubits):
         ax.set_xlabel('X'); ax.set_ylabel('Y'); ax.set_zlabel('Z')
         ax.set_title(f'Qubit {q} Bloch trajectory')
         ax.legend()
-
     # Entanglement entropy
-    ax_e = fig.add_subplot(1, n_qubits + 1, n_qubits + 1)
-    ax_e.plot(jnp.linspace(0, 1.0, len(ent_entropy)), ent_entropy, color='purple', lw=2)
-    ax_e.set_xlabel('Time t')
-    ax_e.set_ylabel('Entanglement entropy S(t)')
-    ax_e.set_title('Entanglement entropy (qubit 0 vs rest)')
-    ax_e.grid(True)
+    if ent:
+        # Entanglement entropy between qubit 0 and the rest
+        ent_entropy = jnp.array([
+            von_neumann_entropy(partial_trace(psi, [0], n_qubits)) for psi in states
+        ])
+        ax_e = fig.add_subplot(1, n_fig, n_fig)
+        ax_e.plot(jnp.linspace(0, 1.0, len(ent_entropy)), ent_entropy, color='purple', lw=2)
+        ax_e.set_xlabel('Time t')
+        ax_e.set_ylabel('Entanglement entropy S(t)')
+        ax_e.set_title('Entanglement entropy (qubit 0 vs rest)')
+        ax_e.grid(True)
 
     plt.tight_layout()
-    plt.show()
+    if savepath: 
+        plt.savefig(savepath)
+    else:
+        plt.show()
 
 def build_hamiltonians(n_qubits): 
     H0 = sum(qml.PauliX(i) @ qml.PauliX(i+1) for i in range(n_qubits-1))   
@@ -164,9 +167,10 @@ def build_hamiltonians(n_qubits):
             H0,
             qml.PauliX(0) @ qml.Identity(1) @ qml.Identity(2) @ qml.Identity(3),
             qml.Identity(0) @ qml.PauliY(1) @ qml.Identity(2) @ qml.Identity(3),
-            qml.Identity(0) @ qml.Identity(1) @ qml.PauliX(2) @ qml.Identity(3),
-            qml.Identity(0) @ qml.Identity(1) @ qml.PauliY(2) @ qml.Identity(3) ,
-            #qml.Identity(0) @ qml.Identity(1) @ qml.Identity(2) @ qml.PauliX(3) ,
+            qml.Identity(0) @ qml.Identity(1) @ qml.PauliZ(2) @ qml.Identity(3),
+            qml.Identity(0) @ qml.Identity(1) @ qml.Identity(2) @ qml.PauliX(3),
+#            qml.PauliZ(0) @ qml.Identity(1) @ qml.Identity(2) @ qml.Identity(3) ,
+#            qml.Identity(0) @ qml.PauliZ(1) @ qml.Identity(2) @ qml.Identity(3) ,
         ]
     else:
         raise AssertionError("Not implemented yet")
