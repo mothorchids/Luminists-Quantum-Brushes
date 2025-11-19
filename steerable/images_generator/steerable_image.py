@@ -59,20 +59,20 @@ def selection_to_state(image, region, nb_controls):
     S_safe = np.clip(S, 1e-30, None)  # Avoid log(0) or negative
     log_s = np.log(S_safe)
     if nb_controls == 2:
-        return U, S, Vt, log_s / jnp.linalg.norm(log_s)
+        return U, S, Vt, log_s / np.linalg.norm(log_s)
 
     # state = Vt.flatten() # 16 entries
     if nb_controls == 3:
-        log_s2 =jnp.concatenate([log_s, Vt @ log_s])
+        log_s2 =np.concatenate([log_s, Vt @ log_s])
         
-        return U, S, Vt, log_s2/jnp.linalg.norm(log_s2)
+        return U, S, Vt, log_s2/np.linalg.norm(log_s2)
     elif nb_controls == 4:
         # return U, S, Vt, state / np.linalg.norm(state)
         ### First method
-        log_s4 = jnp.concatenate([log_s, Vt @ log_s, Vt @ Vt @ log_s, Vt @ Vt @ Vt @ log_s])
+        log_s4 = np.concatenate([log_s, Vt @ log_s, Vt @ Vt @ log_s, Vt @ Vt @ Vt @ log_s])
         ### Second method
         # log_s4 = (np.kron(log_s.reshape(-1, 1), log_s.reshape(-1,1).T)).flatten()
-        return U, S, Vt, log_s4/jnp.linalg.norm(log_s4)
+        return U, S, Vt, log_s4/np.linalg.norm(log_s4)
 
     else :
         raise ValueError(f"Unsupported number of controls: {nb_controls}")
@@ -82,13 +82,13 @@ def state_to_pixels(U, S, Vt, state):
     template : selection of pixels from an image
     state : output state from circuit
     """
-    state = jnp.array(state)
+    state = np.array(state)
     nb = len(state)
-    S_new = jnp.copy(jnp.diag(S))
-    Vt_new = jnp.copy(Vt)
-    S_safe = jnp.clip(S, 1e-30, None)  # Avoid log(0) or negative
-    log_s = jnp.log(S_safe)
-    norm_log_s = jnp.linalg.norm(log_s)
+    S_new = np.copy(np.diag(S))
+    Vt_new = np.copy(Vt)
+    S_safe = np.clip(S, 1e-30, None)  # Avoid log(0) or negative
+    log_s = np.log(S_safe)
+    norm_log_s = np.linalg.norm(log_s)
     # helper function to construct block diagonaled matrices
     def block_diag_np(*mats):
         # Determine total size
@@ -96,7 +96,7 @@ def state_to_pixels(U, S, Vt, state):
         total = sum(sizes)
 
         # Allocate zero matrix
-        out = jnp.zeros((total, total), dtype=mats[0].dtype)
+        out = np.zeros((total, total), dtype=mats[0].dtype)
 
         # Fill blocks
         offset = 0
@@ -107,17 +107,17 @@ def state_to_pixels(U, S, Vt, state):
 
         return out
     if nb==4:
-        exponent = jnp.clip(norm_log_s * state, -700, 700) # to avoid overflow
-        S_new = jnp.diag(jnp.exp(exponent))
+        exponent = np.clip(norm_log_s * state, -700, 700) # to avoid overflow
+        S_new = np.diag(np.exp(exponent))
     elif nb==8 :
-        op = block_diag_np(jnp.eye(4), Vt_new)
-        state_new = (jnp.linalg.inv(op) @ state)[:4]
-        exponent = jnp.clip(norm_log_s * state_new/np.linalg.norm(state_new), -700, 700) # to avoid overflow
-        S_new = jnp.diag(jnp.exp(exponent))
+        op = block_diag_np(np.eye(4), Vt_new)
+        state_new = (np.linalg.inv(op) @ state)[:4]
+        exponent = np.clip(norm_log_s * state_new/np.linalg.norm(state_new), -700, 700) # to avoid overflow
+        S_new = np.diag(np.exp(exponent))
     elif nb==16:
         ### First method
-        op = block_diag_np(jnp.eye(4), Vt_new, Vt_new @ Vt_new, Vt_new @ Vt_new @ Vt_new)
-        state_new = (jnp.linalg.inv(op) @ state)[:4]
+        op = block_diag_np(np.eye(4), Vt_new, Vt_new @ Vt_new, Vt_new @ Vt_new @ Vt_new)
+        state_new = (np.linalg.inv(op) @ state)[:4]
         ### Second method
         # def best_self_outer_complex(M):
         #     H = 0.5 * (M + M.conj().T)   # Hermitian part
@@ -131,8 +131,8 @@ def state_to_pixels(U, S, Vt, state):
         #     return a, A, res_norm 
         # state_new, _, _ = best_self_outer_complex(state.reshape(4, 4))
 
-        exponent = jnp.clip(norm_log_s * state_new/np.linalg.norm(state_new), -700, 700) # to avoid overflow
-        S_new = jnp.diag(jnp.exp(exponent))
+        exponent = np.clip(norm_log_s * state_new/np.linalg.norm(state_new), -700, 700) # to avoid overflow
+        S_new = np.diag(np.exp(exponent))
     else :
         raise ValueError(f"Unsupported number of param in state : {nb}")
     # print(f"========== Output ==============\n U=\n{U},\n S=\n{S_new},\n Vt=\n{Vt_new}")
@@ -181,13 +181,13 @@ def run(params,ts=None):
     region_output = region_s
 
     pixels = image_s[region_output[:, 0], region_output[:, 1], :]
-    pixels = pixels.astype(jnp.float32) / 255.0
+    pixels = pixels.astype(np.float32) / 255.0
 
     new_images = np.empty(16, dtype=object)
     for k in range(len(ts)):
         # print(f"output state: {output_measures[k].real}")
         new_pixels = state_to_pixels(U_s, S_s, Vt_s, output_measures[k].real)
-        new_images[k] = (new_pixels * 255).astype(jnp.uint8)
+        new_images[k] = (new_pixels * 255).astype(np.uint8)
 
     # return new_image
     return new_images
@@ -208,8 +208,8 @@ def main():
         params = json.load(f)
 
     # Load two input images
-    img1 = jnp.array(Image.open(args.image1).convert("RGBA"))
-    img2 = jnp.array(Image.open(args.image2).convert("RGBA"))
+    img1 = np.array(Image.open(args.image1).convert("RGBA"))
+    img2 = np.array(Image.open(args.image2).convert("RGBA"))
 
     # Change params if  precised by user
     params["stroke_input"]["image_s_rgba"] = img1
@@ -220,15 +220,15 @@ def main():
     t_start = params["user_input"].get("t_start", 0.0)
     t_end = params["user_input"].get("t_end", 1.0)
     t_number_of_images = params["user_input"].get("t_number-of-images", 8)
-    ts = list(jnp.linspace(t_start, t_end, t_number_of_images))
+    ts = list(np.linspace(t_start, t_end, t_number_of_images))
     outs = run(params,ts)
     for k in range(len(ts)):
         height, width = img1.shape[:2]
         img_array = outs[k].reshape((height, width, 4))
 
         img_array = np.nan_to_num(img_array)          # replace NaN/Inf with 0
-        img_array = jnp.clip(img_array, 0, 255)        # clamp values to [0, 255]
-        img_array = img_array.astype(jnp.uint8)        # convert to unsigned 8-bit integer
+        img_array = np.clip(img_array, 0, 255)        # clamp values to [0, 255]
+        img_array = img_array.astype(np.uint8)        # convert to unsigned 8-bit integer
 
         # Save output
         pretty_t = format(ts[k], ".2f").replace('.','p')
