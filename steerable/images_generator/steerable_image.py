@@ -42,8 +42,8 @@ def define_region(img, coord1=None, coord2=None):
     c_start, c_end = min(c1, c2), max(c1, c2)
     
     # Create coordinates
-    rows, cols = jnp.meshgrid(jnp.arange(r_start, r_end+1), jnp.arange(c_start, c_end+1), indexing='ij')
-    coords = jnp.stack([rows.ravel(), cols.ravel()], axis=-1)
+    rows, cols = np.meshgrid(np.arange(r_start, r_end+1), np.arange(c_start, c_end+1), indexing='ij')
+    coords = np.stack([rows.ravel(), cols.ravel()], axis=-1)
     
     return coords
 
@@ -53,11 +53,11 @@ Utility functions for colors
 def selection_to_state(image, region, nb_controls):
     pixels = image[region[:, 0], region[:, 1]] # RGBA 
     # print(f"initial pixels {pixels}")
-    pixels = pixels.astype(jnp.float32) / 255.0
+    pixels = pixels.astype(np.float32) / 255.0
 
-    U, S, Vt = jnp.linalg.svd(pixels, full_matrices=False)
-    S_safe = jnp.clip(S, 1e-30, None)  # Avoid log(0) or negative
-    log_s = jnp.log(S_safe)
+    U, S, Vt = np.linalg.svd(pixels, full_matrices=False)
+    S_safe = np.clip(S, 1e-30, None)  # Avoid log(0) or negative
+    log_s = np.log(S_safe)
     if nb_controls == 2:
         return U, S, Vt, log_s / jnp.linalg.norm(log_s)
 
