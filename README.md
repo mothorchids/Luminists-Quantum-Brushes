@@ -2,9 +2,6 @@
 Supplementary Resources for Bradford Quantum Hackathon Final Submission. Refer to this [repository](https://github.com/mothorchids/QuantumBrush) for the implementation
 and this [PR](https://github.com/moth-quantum/QuantumBrush/pull/25) for the integration of our two brushes.
 
-## TODO
-- Integration with quantum hardware and emulators.
-  
 ## Usage
 
 ### Steerable
@@ -40,4 +37,6 @@ Below is an application of Chemical to Anita Malfatti's _Portrait of Mário de A
 
 <img width="700" height="955" alt="anita50_big_radius" src="https://github.com/user-attachments/assets/e45d3f4e-3060-43ac-83dd-08ba06d61107" />
 
-
+## TODO
+- Integration with quantum hardware and emulators.
+  
